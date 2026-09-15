@@ -1,0 +1,1 @@
+"""Inventory dashboard service package."""
