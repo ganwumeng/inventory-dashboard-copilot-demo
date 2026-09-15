@@ -9,6 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import auth, store
@@ -38,6 +39,21 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
             if path == "/health":
                 self._send_json(200, {"status": "ok"})
+                return
+            if path == "/api/reports/daily":
+                if not self._authorized():
+                    self._send_json(401, {"error": "unauthorized"})
+                    return
+                report = {
+                    "date": datetime.now(timezone.utc).date().isoformat(),
+                    "total_skus": len(store.INVENTORY),
+                    "low_stock": [
+                        {"sku": sku, "on_hand": store.INVENTORY[sku]}
+                        for sku in sorted(store.INVENTORY)
+                        if store.INVENTORY[sku] < 20
+                    ],
+                }
+                self._send_json(200, report)
                 return
             if path.startswith("/api/inventory/"):
                 if not self._authorized():

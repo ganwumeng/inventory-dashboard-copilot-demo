@@ -8,6 +8,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -62,6 +63,24 @@ class ServiceTest(unittest.TestCase):
     def test_inventory_unknown_sku_404_with_auth(self) -> None:
         status, _ = _get(self.port, "/api/inventory/SKU-NOPE-99", TEST_TOKEN)
         self.assertEqual(status, 404)
+
+    def test_daily_report_requires_auth(self) -> None:
+        status, _ = _get(self.port, "/api/reports/daily")
+        self.assertEqual(status, 401)
+
+    def test_daily_report_payload(self) -> None:
+        status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["date"], datetime.now(timezone.utc).date().isoformat())
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+        self.assertEqual(
+            body["low_stock"],
+            [
+                {"sku": sku, "on_hand": INVENTORY[sku]}
+                for sku in sorted(INVENTORY)
+                if INVENTORY[sku] < 20
+            ],
+        )
 
 
 if __name__ == "__main__":
