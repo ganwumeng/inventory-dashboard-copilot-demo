@@ -18,6 +18,10 @@ import urllib.error
 
 from . import auth, store
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
     """Create the dashboard HTTP server bound to 127.0.0.1:``port``."""
@@ -83,9 +87,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
+                    opener = urllib.request.build_opener(NoRedirectHandler)
                     try:
-                        with urllib.request.urlopen(req, timeout=5):
+                        with opener.open(req, timeout=5):
                             pass
+                    except urllib.error.HTTPError:
+                        pass
                     except urllib.error.URLError:
                         pass
                 

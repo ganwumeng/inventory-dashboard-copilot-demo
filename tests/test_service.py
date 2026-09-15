@@ -116,6 +116,46 @@ class ServiceTest(unittest.TestCase):
             cb_server.server_close()
             cb_thread.join(timeout=10)
 
+    def test_daily_report_callback_redirect_not_followed(self) -> None:
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+        import urllib.parse
+        
+        callback_data = []
+        
+        class CallbackHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path == "/redirect":
+                    self.send_response(307)
+                    self.send_header('Location', f'http://127.0.0.1:{self.server.server_address[1]}/target')
+                    self.end_headers()
+                elif self.path == "/target":
+                    length = int(self.headers["Content-Length"])
+                    data = self.rfile.read(length)
+                    callback_data.append(json.loads(data.decode("utf-8")))
+                    self.send_response(200)
+                    self.end_headers()
+                
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+                
+        cb_server = ThreadingHTTPServer(("127.0.0.1", 0), CallbackHandler)
+        cb_port = cb_server.server_address[1]
+        cb_thread = threading.Thread(target=cb_server.serve_forever, daemon=True)
+        cb_thread.start()
+        
+        try:
+            callback_url = urllib.parse.quote(f"http://127.0.0.1:{cb_port}/redirect")
+            status, body = _get(self.port, f"/api/reports/daily?callback_url={callback_url}", TEST_TOKEN)
+            self.assertEqual(status, 200)
+            
+            # Since redirect should NOT be followed, callback_data should be empty
+            self.assertEqual(len(callback_data), 0)
+        finally:
+            cb_server.shutdown()
+            cb_server.server_close()
+            cb_thread.join(timeout=10)
+
     def test_daily_report_payload(self) -> None:
         status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
         self.assertEqual(status, 200)
