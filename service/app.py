@@ -8,10 +8,48 @@ package never reads environment variables.
 
 from __future__ import annotations
 
+import ipaddress
 import json
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib import error as urlerror
+from urllib import parse, request
 
 from . import auth, store
+
+_HTTPS_CALLBACK_HOST_ALLOWLIST = {"ops.meridian-logistics.example"}
+
+
+def _callback_allowed(callback_url: str) -> bool:
+    parsed = parse.urlsplit(callback_url)
+    if parsed.scheme == "https":
+        return parsed.hostname in _HTTPS_CALLBACK_HOST_ALLOWLIST
+    if parsed.scheme != "http":
+        return False
+    host = parsed.hostname
+    if host == "localhost":
+        return True
+    if host is None:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _post_callback(callback_url: str, payload: object) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    callback_request = request.Request(
+        callback_url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with request.urlopen(callback_request, timeout=2):
+            pass
+    except (urlerror.URLError, TimeoutError):
+        pass
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -35,9 +73,28 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
-            path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            route, _, query = self.path.partition("?")
+            path = route.rstrip("/") or "/"
             if path == "/health":
                 self._send_json(200, {"status": "ok"})
+                return
+            if path == "/api/reports/daily":
+                if not self._authorized():
+                    self._send_json(401, {"error": "unauthorized"})
+                    return
+                report = {
+                    "date": datetime.now(timezone.utc).date().isoformat(),
+                    "total_skus": len(store.INVENTORY),
+                    "low_stock": [
+                        {"sku": sku, "on_hand": store.INVENTORY[sku]}
+                        for sku in sorted(store.INVENTORY)
+                        if store.INVENTORY[sku] < 20
+                    ],
+                }
+                callback_url = parse.parse_qs(query).get("callback_url", [None])[0]
+                if callback_url and _callback_allowed(callback_url):
+                    _post_callback(callback_url, report)
+                self._send_json(200, report)
                 return
             if path.startswith("/api/inventory/"):
                 if not self._authorized():
