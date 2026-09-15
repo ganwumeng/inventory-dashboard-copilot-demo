@@ -12,6 +12,10 @@ import json
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import urllib.parse
+import urllib.request
+import urllib.error
+
 from . import auth, store
 
 
@@ -36,7 +40,10 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
-            path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            parts = self.path.split("?", 1)
+            path = parts[0].rstrip("/") or "/"
+            query_string = parts[1] if len(parts) > 1 else ""
+
             if path == "/health":
                 self._send_json(200, {"status": "ok"})
                 return
@@ -44,6 +51,21 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                 if not self._authorized():
                     self._send_json(401, {"error": "unauthorized"})
                     return
+
+                callback_url = None
+                if query_string:
+                    qs = urllib.parse.parse_qs(query_string)
+                    if "callback_url" in qs:
+                        callback_url = qs["callback_url"][0]
+
+                if callback_url:
+                    parsed = urllib.parse.urlparse(callback_url)
+                    is_valid_https = parsed.scheme == "https" and parsed.hostname == "ops.meridian-logistics.example"
+                    is_valid_http = parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost", "::1")
+                    if not (is_valid_https or is_valid_http):
+                        self._send_json(403, {"error": "forbidden callback url"})
+                        return
+
                 report = {
                     "date": datetime.now(timezone.utc).date().isoformat(),
                     "total_skus": len(store.INVENTORY),
@@ -53,6 +75,20 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         if store.INVENTORY[sku] < 20
                     ],
                 }
+
+                if callback_url:
+                    req = urllib.request.Request(
+                        callback_url,
+                        data=json.dumps(report).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=5):
+                            pass
+                    except urllib.error.URLError:
+                        pass
+                
                 self._send_json(200, report)
                 return
             if path.startswith("/api/inventory/"):
