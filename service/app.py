@@ -36,7 +36,11 @@ def _callback_target(url: str) -> tuple[type[HTTPConnection], str, int | None, s
     parsed = urlparse(url)
     if not _callback_receiver_allowed(url):
         return None
-    if parsed.hostname is None or parsed.username or parsed.password:
+    if (
+        parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         return None
     path = parsed.path or "/"
     if parsed.query:
