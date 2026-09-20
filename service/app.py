@@ -12,7 +12,7 @@ import json
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 from . import auth, store
 
@@ -21,19 +21,33 @@ CALLBACK_URL_HTTPS_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 CALLBACK_URL_HTTP_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def _callback_url_allowed(url: str) -> bool:
+def _safe_callback_url(url: str) -> str | None:
     try:
         parsed = urlparse(url)
-        _ = parsed.port
+        port = parsed.port
     except ValueError:
-        return False
+        return None
     if parsed.username is not None or parsed.password is not None:
-        return False
+        return None
+    path = parsed.path or "/"
+    query = parsed.query
+
     if parsed.scheme == "https":
-        return parsed.hostname in CALLBACK_URL_HTTPS_ALLOWLIST
+        if parsed.hostname not in CALLBACK_URL_HTTPS_ALLOWLIST or port not in (None, 443):
+            return None
+        return urlunparse(
+            ("https", "ops.meridian-logistics.example", path, "", query, "")
+        )
     if parsed.scheme == "http":
-        return parsed.hostname in CALLBACK_URL_HTTP_LOOPBACK
-    return False
+        if parsed.hostname not in CALLBACK_URL_HTTP_LOOPBACK:
+            return None
+        if parsed.hostname == "::1":
+            host = "[::1]"
+        else:
+            host = parsed.hostname
+        netloc = f"{host}:{port}" if port is not None else host
+        return urlunparse(("http", netloc, path, "", query, ""))
+    return None
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -59,11 +73,14 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _post_daily_report_audit(
             self, report: dict[str, object], callback_url: str | None
         ) -> None:
-            if not callback_url or not _callback_url_allowed(callback_url):
+            safe_callback_url = (
+                _safe_callback_url(callback_url) if callback_url else None
+            )
+            if not safe_callback_url:
                 return
             try:
                 req = urllib.request.Request(
-                    callback_url,
+                    safe_callback_url,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
