@@ -7,3 +7,4 @@ this index.
 
 ## Specifications
 - `daily-inventory-report.md` — contract for `GET /api/reports/daily`.
+- `inventory-sku-count.md` — contract for `GET /api/inventory/count`.

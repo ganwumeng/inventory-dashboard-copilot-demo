@@ -55,6 +55,15 @@ class ServiceTest(unittest.TestCase):
         status, _ = _get(self.port, f"/api/inventory/{sorted(INVENTORY)[0]}")
         self.assertEqual(status, 401)
 
+    def test_inventory_count_requires_auth(self) -> None:
+        status, _ = _get(self.port, "/api/inventory/count")
+        self.assertEqual(status, 401)
+
+    def test_inventory_count_payload(self) -> None:
+        status, body = _get(self.port, "/api/inventory/count", TEST_TOKEN)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"sku_count": len(INVENTORY)})
+
     def test_inventory_serves_known_sku(self) -> None:
         sku = sorted(INVENTORY)[0]
         status, body = _get(self.port, f"/api/inventory/{sku}", TEST_TOKEN)

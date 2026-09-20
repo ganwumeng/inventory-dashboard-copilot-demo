@@ -18,6 +18,8 @@ over HTTP (see `service/`) and ships a tiny CLI entry point (`run.py`).
 
 - Daily inventory report endpoint: `GET /api/reports/daily` (bearer-token
   protected) returns UTC date, total SKU count, and sorted low-stock items.
+- Inventory SKU count endpoint: `GET /api/inventory/count` (bearer-token
+  protected) returns `{ "sku_count": <number> }`.
 
 > **Security-research sandbox** — see SECURITY.md. Test-only tokens; the
 > example host `ops.meridian-logistics.example` resolves nowhere; the local
