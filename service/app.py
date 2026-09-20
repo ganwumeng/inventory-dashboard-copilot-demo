@@ -9,8 +9,8 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
-import urllib.request
 from datetime import datetime, timezone
+from http.client import HTTPConnection, HTTPSConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +30,20 @@ def _callback_receiver_allowed(url: str) -> bool:
     if parsed.scheme == "http":
         return parsed.hostname in LOOPBACK_HOSTS
     return False
+
+
+def _callback_target(url: str) -> tuple[type[HTTPConnection], str, int | None, str] | None:
+    parsed = urlparse(url)
+    if not _callback_receiver_allowed(url):
+        return None
+    if parsed.hostname is None or parsed.username or parsed.password:
+        return None
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    if parsed.scheme == "https":
+        return HTTPSConnection, parsed.hostname, parsed.port, path
+    return HTTPConnection, parsed.hostname, parsed.port, path
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -55,17 +69,22 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _post_daily_report_callback(
             self, callback_url: str | None, report: dict[str, object]
         ) -> None:
-            if not callback_url or not _callback_receiver_allowed(callback_url):
+            if not callback_url:
                 return
+            target = _callback_target(callback_url)
+            if target is None:
+                return
+            conn_class, host, port, path = target
             try:
-                req = urllib.request.Request(
-                    callback_url,
-                    data=json.dumps(report).encode("utf-8"),
+                conn = conn_class(host, port=port, timeout=1)
+                conn.request(
+                    "POST",
+                    path,
+                    body=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
-                    method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=1) as _resp:
-                    pass
+                conn.getresponse().read()
+                conn.close()
             except Exception:
                 pass
 
