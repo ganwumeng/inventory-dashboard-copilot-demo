@@ -22,8 +22,17 @@ AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
 
 
 def _audit_receiver_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
+    try:
+        parsed = urlparse(url)
+        _ = parsed.port
+    except ValueError:
+        return False
+
+    if parsed.scheme != "https":
+        return False
+    if "@" in parsed.netloc:
+        return False
+    return parsed.hostname in AUDIT_REPORT_ALLOWLIST
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
