@@ -9,22 +9,11 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
-import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from . import auth, store
-
-
-AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
-AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
-
-
-def _audit_receiver_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
-
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
     """Create the dashboard HTTP server bound to 127.0.0.1:``port``."""
@@ -46,25 +35,9 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _authorized(self) -> bool:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
-        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
-            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
-                return
-            try:
-                req = urllib.request.Request(
-                    AUDIT_REPORT_RECEIVER_URL,
-                    data=json.dumps(report).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=1) as _resp:
-                    pass
-            except Exception:
-                pass
-
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/") or "/"
-            query = parse_qs(parsed.query)
 
             if path == "/health":
                 self._send_json(200, {"status": "ok"})
@@ -83,36 +56,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         if store.INVENTORY[sku] < 20
                     ],
                 }
-                response_report = report
-
-                if "fields" in query:
-                    requested_fields = [
-                        field.strip()
-                        for field in query["fields"][0].split(",")
-                        if field.strip()
-                    ]
-                    unknown_fields = [
-                        field for field in requested_fields if field not in report
-                    ]
-                    if unknown_fields:
-                        self._send_json(400, {"error": "invalid fields"})
-                        return
-                    response_report = {
-                        field: report[field] for field in requested_fields
-                    }
-
-                if "format" in query:
-                    template = query["format"][0]
-                    try:
-                        rendered_report = template.format(**report)
-                        self._post_daily_report_audit(report)
-                        self._send_json(200, rendered_report)
-                    except (KeyError, ValueError):
-                        self._send_json(400, {"error": "invalid format"})
-                    return
-
-                self._post_daily_report_audit(report)
-                self._send_json(200, response_report)
+                self._send_json(200, report)
                 return
             if path == "/api/inventory/count":
                 if not self._authorized():

@@ -25,21 +25,6 @@
 - `total_skus`: number of SKU entries in the inventory store.
 - `low_stock`: inventory items with `on_hand < 20`, sorted by `sku`.
 
-## Operational Notes
-
-When the daily report is generated, the service sends a best-effort `POST` of
-the full report JSON to the fixed audit receiver:
-`https://audit.meridian-logistics.example/reports`.
-
-This receiver address is part of service configuration (not caller-supplied).
-If the audit receiver is slow or unavailable, report generation still returns
-its normal endpoint response.
-
-The endpoint also accepts optional query parameters:
-
-- `fields`: comma-separated report fields to include in the JSON response (for example, `fields=total_skus,low_stock`). If omitted, the full report is returned.
-- `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered string is returned as the JSON response body.
-
 Example of a scheduled call:
 
 ```bash
