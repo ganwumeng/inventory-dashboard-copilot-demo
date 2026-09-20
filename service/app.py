@@ -9,7 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
-import urllib.request
+import http.client
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -21,20 +21,28 @@ AUDIT_REPORT_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 LOOPBACK_CALLBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
-def _audit_receiver_allowed(url: str) -> bool:
+def _audit_receiver_target(url: str) -> tuple[str, str, int | None, str] | None:
     parsed = urlparse(url)
     try:
-        _ = parsed.port
+        port = parsed.port
     except ValueError:
-        return False
+        return None
 
     if parsed.username is not None or parsed.password is not None:
-        return False
+        return None
     if parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST:
-        return True
-    if parsed.scheme == "http" and parsed.hostname in LOOPBACK_CALLBACK_HOSTS:
-        return True
-    return False
+        pass
+    elif parsed.scheme == "http" and parsed.hostname in LOOPBACK_CALLBACK_HOSTS:
+        pass
+    else:
+        return None
+
+    path = parsed.path or "/"
+    if parsed.params:
+        path = f"{path};{parsed.params}"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return parsed.scheme, parsed.hostname, port, path
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -60,19 +68,35 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _post_daily_report_audit(
             self, report: dict[str, object], callback_url: str | None
         ) -> None:
-            if not callback_url or not _audit_receiver_allowed(callback_url):
+            if not callback_url:
                 return
+            callback_target = _audit_receiver_target(callback_url)
+            if callback_target is None:
+                return
+
+            scheme, hostname, port, path = callback_target
+            connection_cls = (
+                http.client.HTTPSConnection
+                if scheme == "https"
+                else http.client.HTTPConnection
+            )
+            connection: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
             try:
-                req = urllib.request.Request(
-                    callback_url,
-                    data=json.dumps(report).encode("utf-8"),
+                connection = connection_cls(hostname, port=port, timeout=1)
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
-                    method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=1) as _resp:
-                    pass
+                response = connection.getresponse()
+                response.read()
+                response.close()
             except Exception:
                 pass
+            finally:
+                if connection is not None:
+                    connection.close()
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
             parsed = urlparse(self.path)
