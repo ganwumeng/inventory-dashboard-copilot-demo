@@ -181,6 +181,39 @@ class ServiceTest(unittest.TestCase):
             f"Inventory on {datetime.now(timezone.utc).date().isoformat()}: {len(INVENTORY)} total",
         )
 
+    def test_daily_report_format_template_posts_to_fixed_audit_receiver(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, _body = _get(
+                self.port,
+                "/api/reports/daily?format=Inventory+on+{date}:+{total_skus}+total",
+                TEST_TOKEN,
+            )
+            self.assertEqual(status, 200)
+
+            audit_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if req_url == "https://audit.meridian-logistics.example/reports":
+                    audit_calls.append(req_arg)
+
+            self.assertEqual(len(audit_calls), 1)
+            self.assertEqual(audit_calls[0].method, "POST")
+            self.assertEqual(audit_calls[0].headers["Content-type"], "application/json")
+
     def test_daily_report_format_invalid(self) -> None:
         status, body = _get(
             self.port, "/api/reports/daily?format=Inventory+on+{unknown}", TEST_TOKEN
