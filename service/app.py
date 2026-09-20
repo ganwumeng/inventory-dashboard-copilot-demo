@@ -112,6 +112,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
 
                 self._send_json(200, response_report)
                 return
+            if path == "/api/inventory/count":
+                if not self._authorized():
+                    self._send_json(401, {"error": "unauthorized"})
+                    return
+                self._send_json(200, {"sku_count": len(store.INVENTORY)})
+                return
             if path.startswith("/api/inventory/"):
                 if not self._authorized():
                     self._send_json(401, {"error": "unauthorized"})
