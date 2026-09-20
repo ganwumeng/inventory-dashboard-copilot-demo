@@ -215,6 +215,18 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(body["total_skus"], len(INVENTORY))
         mock_https.assert_not_called()
 
+    def test_daily_report_skips_callback_post_for_non_hook_path(self) -> None:
+        with unittest.mock.patch("service.app.http.client.HTTPSConnection") as mock_https:
+            status, body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=https://ops.meridian-logistics.example/reports",
+                TEST_TOKEN,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+        mock_https.assert_not_called()
+
     def test_daily_report_fields_subset(self) -> None:
         status, body = _get(
             self.port, "/api/reports/daily?fields=total_skus,low_stock", TEST_TOKEN

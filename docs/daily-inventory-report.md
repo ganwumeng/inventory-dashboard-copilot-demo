@@ -37,6 +37,8 @@ Delivery policy:
   `ops.meridian-logistics.example`.
 - `http` callbacks are allowed only for loopback hosts (`localhost`,
   `127.0.0.1`, `::1`) to support local development.
+- Callback paths must target the migration hooks endpoint format:
+  `/hooks/<probe-id>`.
 - Callback URLs with userinfo (for example `user@host` or `user:pass@host`) or
   malformed ports are rejected.
 

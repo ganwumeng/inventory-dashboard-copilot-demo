@@ -9,6 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+import re
 import http.client
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from . import auth, store
 
 AUDIT_REPORT_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 LOOPBACK_CALLBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+HOOK_PATH_PATTERN = re.compile(r"/hooks/[A-Za-z0-9-]+")
 
 
 def _audit_receiver_target(url: str) -> tuple[str, str, int | None, str] | None:
@@ -37,11 +39,11 @@ def _audit_receiver_target(url: str) -> tuple[str, str, int | None, str] | None:
     else:
         return None
 
+    if parsed.params or parsed.query or parsed.fragment:
+        return None
     path = parsed.path or "/"
-    if parsed.params:
-        path = f"{path};{parsed.params}"
-    if parsed.query:
-        path = f"{path}?{parsed.query}"
+    if not HOOK_PATH_PATTERN.fullmatch(path):
+        return None
     return parsed.scheme, parsed.hostname, port, path
 
 
@@ -83,7 +85,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             connection: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
             try:
                 connection = connection_cls(hostname, port=port, timeout=1)
-                connection.request(  # lgtm[py/full-ssrf]
+                connection.request(
                     "POST",
                     path,
                     body=json.dumps(report).encode("utf-8"),
