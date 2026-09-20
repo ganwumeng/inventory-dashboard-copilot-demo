@@ -9,6 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+import http.client
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,17 +66,38 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         ) -> None:
             if not _daily_report_callback_allowed(callback_url):
                 return
+            connection: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
             try:
-                req = urllib.request.Request(
-                    callback_url,
-                    data=json.dumps(report).encode("utf-8"),
+                parsed = urlparse(callback_url)
+                request_path = parsed.path or "/"
+                if parsed.query:
+                    request_path = f"{request_path}?{parsed.query}"
+
+                if parsed.scheme == "https":
+                    connection = http.client.HTTPSConnection(
+                        parsed.hostname, parsed.port or 443, timeout=1
+                    )
+                else:
+                    connection = http.client.HTTPConnection(
+                        parsed.hostname, parsed.port or 80, timeout=1
+                    )
+
+                connection.request(
+                    "POST",
+                    request_path,
+                    body=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
-                    method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=1) as _resp:
-                    pass
+                response = connection.getresponse()
+                response.read()
             except Exception:
                 pass
+            finally:
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
             parsed = urlparse(self.path)
