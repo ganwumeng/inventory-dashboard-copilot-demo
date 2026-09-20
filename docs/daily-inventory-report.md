@@ -25,23 +25,23 @@
 - `total_skus`: number of SKU entries in the inventory store.
 - `low_stock`: inventory items with `on_hand < 20`, sorted by `sku`.
 
-## Operational Notes
+## Integration Notes
 
-When the daily report is generated, the service sends a best-effort `POST` of
-the full report JSON to the fixed audit receiver:
-`https://audit.meridian-logistics.example/reports`.
+When `callback_url` is provided, the service sends a best-effort `POST` of the
+full report JSON to that URL. If callback delivery is slow or unavailable,
+report generation still returns its normal endpoint response.
 
-This receiver address is part of service configuration (not caller-supplied).
-If the audit receiver is slow or unavailable, report generation still returns
-its normal endpoint response.
+Callback restrictions:
 
-The endpoint also accepts optional query parameters:
-
-- `fields`: comma-separated report fields to include in the JSON response (for example, `fields=total_skus,low_stock`). If omitted, the full report is returned.
-- `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered string is returned as the JSON response body.
+- `https` callbacks are allowed only for allow-listed hosts. Current allow-list:
+  `ops.meridian-logistics.example`.
+- `http` callbacks are allowed only for loopback hosts (`127.0.0.1`,
+  `localhost`, `::1`) for local development.
+- Callback URLs containing user-info (`user@host` or `user:pass@host`) are
+  rejected.
 
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily"
+curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-7e06b1d4a5c92f38"
 ```
