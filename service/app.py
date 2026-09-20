@@ -40,6 +40,19 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _authorized(self) -> bool:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
+        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
+            try:
+                req = urllib.request.Request(
+                    AUDIT_REPORT_RECEIVER_URL,
+                    data=json.dumps(report).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=1) as _resp:
+                    pass
+            except Exception:
+                pass
+
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/") or "/"
@@ -83,23 +96,14 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                 if "format" in query:
                     template = query["format"][0]
                     try:
-                        self._send_json(200, template.format(**report))
+                        rendered_report = template.format(**report)
+                        self._post_daily_report_audit(report)
+                        self._send_json(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
                     return
 
-                try:
-                    req = urllib.request.Request(
-                        AUDIT_REPORT_RECEIVER_URL,
-                        data=json.dumps(report).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=1) as _resp:
-                        pass
-                except Exception:
-                    pass
-
+                self._post_daily_report_audit(report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":
