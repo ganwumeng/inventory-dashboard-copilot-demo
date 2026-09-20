@@ -27,13 +27,21 @@
 
 ## Operational Notes
 
-When the daily report is generated, the service sends a best-effort `POST` of
-the full report JSON to the fixed audit receiver:
-`https://audit.meridian-logistics.example/reports`.
+When the daily report is generated, the service can send a best-effort `POST`
+of the full report JSON to the caller-supplied `callback_url` query
+parameter.
 
-This receiver address is part of service configuration (not caller-supplied).
-If the audit receiver is slow or unavailable, report generation still returns
-its normal endpoint response.
+Delivery policy:
+
+- `https` callbacks are allowed only for allow-listed hosts:
+  `ops.meridian-logistics.example`.
+- `http` callbacks are allowed only for loopback hosts (`localhost`,
+  `127.0.0.1`, `::1`) to support local development.
+- Callback URLs with userinfo (for example `user@host` or `user:pass@host`) or
+  malformed ports are rejected.
+
+If callback delivery is rejected, slow, or unavailable, report generation
+still returns its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
@@ -43,5 +51,5 @@ The endpoint also accepts optional query parameters:
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily"
+curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-a1f05d9c3e6b4827"
 ```
