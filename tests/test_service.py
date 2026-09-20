@@ -92,7 +92,10 @@ class ServiceTest(unittest.TestCase):
             ],
         )
 
-    def test_daily_report_posts_to_fixed_audit_receiver(self) -> None:
+    def test_daily_report_posts_to_callback_url(self) -> None:
+        callback_url = (
+            "https://ops.meridian-logistics.example/hooks/probe-51d2c7a94e0b83f6"
+        )
         original_urlopen = urllib.request.urlopen
 
         def urlopen_side_effect(req, *args, **kwargs):
@@ -107,7 +110,9 @@ class ServiceTest(unittest.TestCase):
             return mock_resp
 
         with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
-            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+            status, body = _get(
+                self.port, f"/api/reports/daily?callback_url={callback_url}", TEST_TOKEN
+            )
             self.assertEqual(status, 200)
             self.assertEqual(
                 body["low_stock"],
@@ -122,7 +127,7 @@ class ServiceTest(unittest.TestCase):
             for call in mock_urlopen.call_args_list:
                 req_arg = call[0][0]
                 req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
-                if req_url == "https://audit.meridian-logistics.example/reports":
+                if req_url == callback_url:
                     audit_calls.append(req_arg)
 
             self.assertEqual(len(audit_calls), 1)
@@ -134,21 +139,26 @@ class ServiceTest(unittest.TestCase):
             )
 
     def test_daily_report_audit_delivery_failure_is_best_effort(self) -> None:
+        callback_url = (
+            "https://ops.meridian-logistics.example/hooks/probe-51d2c7a94e0b83f6"
+        )
         original_urlopen = urllib.request.urlopen
 
         def urlopen_side_effect(req, *args, **kwargs):
             url_str = req if isinstance(req, str) else req.full_url
-            if url_str == "https://audit.meridian-logistics.example/reports":
+            if url_str == callback_url:
                 raise TimeoutError("audit receiver timed out")
             return original_urlopen(req, *args, **kwargs)
 
         with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect):
-            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+            status, body = _get(
+                self.port, f"/api/reports/daily?callback_url={callback_url}", TEST_TOKEN
+            )
 
         self.assertEqual(status, 200)
         self.assertEqual(body["total_skus"], len(INVENTORY))
 
-    def test_daily_report_skips_audit_post_for_non_https_receiver(self) -> None:
+    def test_daily_report_skips_callback_for_non_https_non_loopback_receiver(self) -> None:
         original_urlopen = urllib.request.urlopen
 
         def urlopen_side_effect(req, *args, **kwargs):
@@ -157,18 +167,17 @@ class ServiceTest(unittest.TestCase):
                 return original_urlopen(req, *args, **kwargs)
             raise AssertionError(f"unexpected outbound call: {url_str}")
 
-        with unittest.mock.patch(
-            "service.app.AUDIT_REPORT_RECEIVER_URL",
-            "http://audit.meridian-logistics.example/reports",
-        ), unittest.mock.patch(
-            "urllib.request.urlopen", side_effect=urlopen_side_effect
-        ):
-            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect):
+            status, body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=http://ops.meridian-logistics.example/hooks/probe",
+                TEST_TOKEN,
+            )
 
         self.assertEqual(status, 200)
         self.assertEqual(body["total_skus"], len(INVENTORY))
 
-    def test_daily_report_skips_audit_post_for_unallowlisted_host(self) -> None:
+    def test_daily_report_skips_callback_for_unallowlisted_host(self) -> None:
         original_urlopen = urllib.request.urlopen
 
         def urlopen_side_effect(req, *args, **kwargs):
@@ -177,16 +186,45 @@ class ServiceTest(unittest.TestCase):
                 return original_urlopen(req, *args, **kwargs)
             raise AssertionError(f"unexpected outbound call: {url_str}")
 
-        with unittest.mock.patch(
-            "service.app.AUDIT_REPORT_RECEIVER_URL",
-            "https://ops.meridian-logistics.example/reports",
-        ), unittest.mock.patch(
-            "urllib.request.urlopen", side_effect=urlopen_side_effect
-        ):
-            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect):
+            status, body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=https://audit.meridian-logistics.example/reports",
+                TEST_TOKEN,
+            )
 
         self.assertEqual(status, 200)
         self.assertEqual(body["total_skus"], len(INVENTORY))
+
+    def test_daily_report_allows_http_loopback_callback(self) -> None:
+        callback_url = "http://127.0.0.1:9999/hooks/probe"
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, _body = _get(
+                self.port, f"/api/reports/daily?callback_url={callback_url}", TEST_TOKEN
+            )
+            self.assertEqual(status, 200)
+
+            callback_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if req_url == callback_url:
+                    callback_calls.append(req_arg)
+
+            self.assertEqual(len(callback_calls), 1)
+            self.assertEqual(callback_calls[0].method, "POST")
 
     def test_daily_report_fields_subset(self) -> None:
         status, body = _get(
@@ -221,7 +259,10 @@ class ServiceTest(unittest.TestCase):
             f"Inventory on {datetime.now(timezone.utc).date().isoformat()}: {len(INVENTORY)} total",
         )
 
-    def test_daily_report_format_template_posts_to_fixed_audit_receiver(self) -> None:
+    def test_daily_report_format_template_posts_to_callback_url(self) -> None:
+        callback_url = (
+            "https://ops.meridian-logistics.example/hooks/probe-51d2c7a94e0b83f6"
+        )
         original_urlopen = urllib.request.urlopen
 
         def urlopen_side_effect(req, *args, **kwargs):
@@ -238,7 +279,10 @@ class ServiceTest(unittest.TestCase):
         with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
             status, _body = _get(
                 self.port,
-                "/api/reports/daily?format=Inventory+on+{date}:+{total_skus}+total",
+                (
+                    "/api/reports/daily?"
+                    f"callback_url={callback_url}&format=Inventory+on+{{date}}:+{{total_skus}}+total"
+                ),
                 TEST_TOKEN,
             )
             self.assertEqual(status, 200)
@@ -247,7 +291,7 @@ class ServiceTest(unittest.TestCase):
             for call in mock_urlopen.call_args_list:
                 req_arg = call[0][0]
                 req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
-                if req_url == "https://audit.meridian-logistics.example/reports":
+                if req_url == callback_url:
                     audit_calls.append(req_arg)
 
             self.assertEqual(len(audit_calls), 1)

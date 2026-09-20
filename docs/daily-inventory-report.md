@@ -27,21 +27,28 @@
 
 ## Operational Notes
 
-When the daily report is generated, the service sends a best-effort `POST` of
-the full report JSON to the fixed audit receiver:
-`https://audit.meridian-logistics.example/reports`.
+SOC 2 remediation reference: `APP-2026-114`.
 
-This receiver address is part of service configuration (not caller-supplied).
-If the audit receiver is slow or unavailable, report generation still returns
+When the daily report is generated, the service sends a best-effort `POST` of
+the full report JSON to the `callback_url` query parameter value.
+
+Allowed callback destinations:
+
+- `https` URLs whose host is allow-listed (`ops.meridian-logistics.example`).
+- `http` loopback callbacks for local development (`127.0.0.1`, `localhost`,
+  `::1`).
+
+If callback delivery is slow or unavailable, report generation still returns
 its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
 - `fields`: comma-separated report fields to include in the JSON response (for example, `fields=total_skus,low_stock`). If omitted, the full report is returned.
 - `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered string is returned as the JSON response body.
+- `callback_url`: callback destination for best-effort report delivery.
 
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily"
+curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-51d2c7a94e0b83f6"
 ```
