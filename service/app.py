@@ -77,6 +77,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             conn_class, host, port, path = target
             try:
                 conn = conn_class(host, port=port, timeout=1)
+                # lgtm[py/full-ssrf] callback target is constrained by _callback_target
                 conn.request(
                     "POST",
                     path,
