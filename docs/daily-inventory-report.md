@@ -33,6 +33,11 @@ To keep this safe, callbacks are limited to `https` and to hosts ending in `meri
 
 For local development, plain-http loopback callbacks remain functional (i.e. `http` with `127.0.0.1`, `localhost`, or `::1`).
 
+The endpoint also accepts optional query parameters:
+
+- `fields`: comma-separated report fields to include in the JSON response (for example, `fields=total_skus,low_stock`). If omitted, the full report is returned.
+- `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered string is returned as the JSON response body.
+
 Example of a scheduled call:
 
 ```bash
