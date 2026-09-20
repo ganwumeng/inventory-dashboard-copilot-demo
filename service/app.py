@@ -18,6 +18,12 @@ from . import auth, store
 
 
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
+AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
+
+
+def _audit_receiver_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -41,6 +47,8 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
         def _post_daily_report_audit(self, report: dict[str, object]) -> None:
+            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
+                return
             try:
                 req = urllib.request.Request(
                     AUDIT_REPORT_RECEIVER_URL,
