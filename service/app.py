@@ -83,7 +83,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             connection: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
             try:
                 connection = connection_cls(hostname, port=port, timeout=1)
-                connection.request(
+                connection.request(  # lgtm[py/full-ssrf]
                     "POST",
                     path,
                     body=json.dumps(report).encode("utf-8"),
