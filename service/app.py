@@ -9,8 +9,10 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from . import auth, store
 
@@ -35,7 +37,9 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
-            path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            parsed = urlparse(self.path)
+            path = parsed.path.rstrip("/") or "/"
+            query = parse_qs(parsed.query)
 
             if path == "/health":
                 self._send_json(200, {"status": "ok"})
@@ -54,6 +58,33 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         if store.INVENTORY[sku] < 20
                     ],
                 }
+
+                if "callback_url" in query:
+                    callback_url = query["callback_url"][0]
+                    cb_parsed = urlparse(callback_url)
+                    is_safe = False
+                    if cb_parsed.scheme == "https" and cb_parsed.hostname:
+                        if cb_parsed.hostname == "meridian-logistics.example" or cb_parsed.hostname.endswith(".meridian-logistics.example"):
+                            is_safe = True
+                    elif cb_parsed.scheme == "http" and cb_parsed.hostname in ("127.0.0.1", "localhost", "::1"):
+                        is_safe = True
+
+                    if not is_safe:
+                        self._send_json(400, {"error": "invalid callback_url"})
+                        return
+
+                    try:
+                        req = urllib.request.Request(
+                            callback_url,
+                            data=json.dumps(report).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        with urllib.request.urlopen(req, timeout=5) as _resp:
+                            pass
+                    except Exception:
+                        pass
+
                 self._send_json(200, report)
                 return
             if path.startswith("/api/inventory/"):

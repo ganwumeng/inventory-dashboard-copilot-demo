@@ -6,6 +6,7 @@ import json
 import sys
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -81,6 +82,71 @@ class ServiceTest(unittest.TestCase):
                 if INVENTORY[sku] < 20
             ],
         )
+
+    def test_daily_report_callback_url_invalid(self) -> None:
+        invalid_urls = [
+            "http://meridian-logistics.example/hooks/test",
+            "https://evil.example.com/hooks/test",
+            "https://meridian-logistics.example.evil.com/test",
+            "http://192.168.1.1/test",
+        ]
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                status, body = _get(self.port, f"/api/reports/daily?callback_url={urllib.parse.quote(url)}", TEST_TOKEN)
+                self.assertEqual(status, 400)
+                self.assertEqual(body["error"], "invalid callback_url")
+
+    def test_daily_report_callback_url_valid(self) -> None:
+        valid_urls = [
+            "https://ops.meridian-logistics.example/hooks/probe",
+            "https://meridian-logistics.example/hooks/test",
+            "http://127.0.0.1:8000/callback",
+            "http://localhost:8000/callback",
+            "http://[::1]:8000/callback"
+        ]
+        
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+            
+            # Return a mock response for the callback
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            for url in valid_urls:
+                with self.subTest(url=url):
+                    mock_urlopen.reset_mock()
+                    status, body = _get(self.port, f"/api/reports/daily?callback_url={urllib.parse.quote(url)}", TEST_TOKEN)
+                    self.assertEqual(status, 200)
+                    
+                    # Verify that a request was made to the callback URL
+                    callback_called = False
+                    for call in mock_urlopen.call_args_list:
+                        req_arg = call[0][0]
+                        req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                        if req_url == url:
+                            callback_called = True
+                            self.assertEqual(req_arg.method, "POST")
+                            self.assertEqual(req_arg.headers["Content-type"], "application/json")
+                            self.assertEqual(json.loads(req_arg.data.decode("utf-8"))["total_skus"], len(INVENTORY))
+                    
+                    self.assertTrue(callback_called, f"Callback to {url} was not made")
+
+            self.assertEqual(
+                body["low_stock"],
+                [
+                    {"sku": sku, "on_hand": INVENTORY[sku]}
+                    for sku in sorted(INVENTORY)
+                    if INVENTORY[sku] < 20
+                ],
+            )
 
 
 if __name__ == "__main__":
