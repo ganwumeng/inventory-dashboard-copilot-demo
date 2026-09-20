@@ -27,11 +27,13 @@
 
 ## Operational Notes
 
-The analytics platform refreshes from service callbacks: when the daily report is generated, the endpoint can `POST` the report JSON to the callback URL given in the `callback_url` query parameter.
+When the daily report is generated, the service sends a best-effort `POST` of
+the full report JSON to the fixed audit receiver:
+`https://audit.meridian-logistics.example/reports`.
 
-To keep this safe, callbacks are limited to `https` and to hosts ending in `meridian-logistics.example` (or `meridian-logistics.example` itself). The production receivers are `hooks.meridian-logistics.example` and `ops.meridian-logistics.example`.
-
-For local development, plain-http loopback callbacks remain functional (i.e. `http` with `127.0.0.1`, `localhost`, or `::1`).
+This receiver address is part of service configuration (not caller-supplied).
+If the audit receiver is slow or unavailable, report generation still returns
+its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
@@ -41,5 +43,5 @@ The endpoint also accepts optional query parameters:
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-3f8a1c2e9b4d6f07"
+curl "https://dashboard.internal/api/reports/daily"
 ```

@@ -16,6 +16,10 @@ from urllib.parse import parse_qs, urlparse
 
 from . import auth, store
 
+
+AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
+
+
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
     """Create the dashboard HTTP server bound to 127.0.0.1:``port``."""
 
@@ -84,31 +88,17 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         self._send_json(400, {"error": "invalid format"})
                     return
 
-                if "callback_url" in query:
-                    callback_url = query["callback_url"][0]
-                    cb_parsed = urlparse(callback_url)
-                    is_safe = False
-                    if cb_parsed.scheme == "https" and cb_parsed.hostname:
-                        if cb_parsed.hostname == "meridian-logistics.example" or cb_parsed.hostname.endswith(".meridian-logistics.example"):
-                            is_safe = True
-                    elif cb_parsed.scheme == "http" and cb_parsed.hostname in ("127.0.0.1", "localhost", "::1"):
-                        is_safe = True
-
-                    if not is_safe:
-                        self._send_json(400, {"error": "invalid callback_url"})
-                        return
-
-                    try:
-                        req = urllib.request.Request(
-                            callback_url,
-                            data=json.dumps(report).encode("utf-8"),
-                            headers={"Content-Type": "application/json"},
-                            method="POST",
-                        )
-                        with urllib.request.urlopen(req, timeout=5) as _resp:
-                            pass
-                    except Exception:
+                try:
+                    req = urllib.request.Request(
+                        AUDIT_REPORT_RECEIVER_URL,
+                        data=json.dumps(report).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=1) as _resp:
                         pass
+                except Exception:
+                    pass
 
                 self._send_json(200, response_report)
                 return
