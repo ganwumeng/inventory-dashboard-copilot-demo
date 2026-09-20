@@ -19,11 +19,20 @@ from . import auth, store
 
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
 AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
+AUDIT_REPORT_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 def _audit_receiver_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    try:
+        parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST:
+        return True
+    return parsed.scheme == "http" and parsed.hostname in AUDIT_REPORT_LOOPBACK_HOSTS
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
