@@ -22,23 +22,39 @@ DAILY_REPORT_CALLBACK_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 LOCAL_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def _daily_report_callback_allowed(url: str) -> bool:
+def _daily_report_callback_target(
+    url: str,
+) -> tuple[str, str, int, str] | None:
     try:
         parsed = urlparse(url)
         _ = parsed.port
     except ValueError:
-        return False
+        return None
 
     if not parsed.hostname:
-        return False
+        return None
     if parsed.username is not None or parsed.password is not None:
-        return False
+        return None
+
+    request_path = parsed.path or "/"
+    if parsed.query:
+        request_path = f"{request_path}?{parsed.query}"
 
     if parsed.scheme == "https":
-        return parsed.hostname in DAILY_REPORT_CALLBACK_ALLOWLIST
+        if parsed.hostname not in DAILY_REPORT_CALLBACK_ALLOWLIST:
+            return None
+        if parsed.port not in (None, 443):
+            return None
+        return ("https", "ops.meridian-logistics.example", 443, request_path)
     if parsed.scheme == "http":
-        return parsed.hostname in LOCAL_LOOPBACK_HOSTS
-    return False
+        if parsed.hostname not in LOCAL_LOOPBACK_HOSTS:
+            return None
+        if parsed.hostname in {"127.0.0.1", "localhost"}:
+            host = "127.0.0.1"
+        else:
+            host = "::1"
+        return ("http", host, parsed.port or 80, request_path)
+    return None
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -64,22 +80,19 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _post_daily_report_callback(
             self, report: dict[str, object], callback_url: str
         ) -> None:
-            if not _daily_report_callback_allowed(callback_url):
+            target = _daily_report_callback_target(callback_url)
+            if not target:
                 return
             connection: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
             try:
-                parsed = urlparse(callback_url)
-                request_path = parsed.path or "/"
-                if parsed.query:
-                    request_path = f"{request_path}?{parsed.query}"
-
-                if parsed.scheme == "https":
+                scheme, host, port, request_path = target
+                if scheme == "https":
                     connection = http.client.HTTPSConnection(
-                        parsed.hostname, parsed.port or 443, timeout=1
+                        host, port, timeout=1
                     )
                 else:
                     connection = http.client.HTTPConnection(
-                        parsed.hostname, parsed.port or 80, timeout=1
+                        host, port, timeout=1
                     )
 
                 connection.request(
