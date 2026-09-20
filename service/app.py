@@ -23,12 +23,16 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 def _callback_receiver_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    if parsed.hostname is None:
+    try:
+        hostname = parsed.hostname
+    except ValueError:
+        return False
+    if hostname is None:
         return False
     if parsed.scheme == "https":
-        return parsed.hostname in CALLBACK_ALLOWLIST
+        return hostname in CALLBACK_ALLOWLIST
     if parsed.scheme == "http":
-        return parsed.hostname in LOOPBACK_HOSTS
+        return hostname in LOOPBACK_HOSTS
     return False
 
 
@@ -36,18 +40,19 @@ def _callback_target(url: str) -> tuple[type[HTTPConnection], str, int | None, s
     parsed = urlparse(url)
     if not _callback_receiver_allowed(url):
         return None
-    if (
-        parsed.hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-    ):
+    try:
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if hostname is None or parsed.username is not None or parsed.password is not None:
         return None
     path = parsed.path or "/"
     if parsed.query:
         path = f"{path}?{parsed.query}"
     if parsed.scheme == "https":
-        return HTTPSConnection, parsed.hostname, parsed.port, path
-    return HTTPConnection, parsed.hostname, parsed.port, path
+        return HTTPSConnection, hostname, port, path
+    return HTTPConnection, hostname, port, path
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:

@@ -190,6 +190,21 @@ class ServiceTest(unittest.TestCase):
         mock_https.assert_not_called()
         mock_http.assert_not_called()
 
+    def test_daily_report_skips_callback_for_invalid_port_in_url(self) -> None:
+        with unittest.mock.patch("service.app.HTTPSConnection") as mock_https, unittest.mock.patch(
+            "service.app.HTTPConnection"
+        ) as mock_http:
+            status, body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=https://ops.meridian-logistics.example:bad/hooks/probe",
+                TEST_TOKEN,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+        mock_https.assert_not_called()
+        mock_http.assert_not_called()
+
     def test_daily_report_allows_http_loopback_callback(self) -> None:
         callback_url = "http://127.0.0.1:9999/hooks/probe"
         conn = unittest.mock.MagicMock()
