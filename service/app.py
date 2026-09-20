@@ -58,6 +58,31 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         if store.INVENTORY[sku] < 20
                     ],
                 }
+                response_report = report
+
+                if "fields" in query:
+                    requested_fields = [
+                        field.strip()
+                        for field in query["fields"][0].split(",")
+                        if field.strip()
+                    ]
+                    unknown_fields = [
+                        field for field in requested_fields if field not in report
+                    ]
+                    if unknown_fields:
+                        self._send_json(400, {"error": "invalid fields"})
+                        return
+                    response_report = {
+                        field: report[field] for field in requested_fields
+                    }
+
+                if "format" in query:
+                    template = query["format"][0]
+                    try:
+                        self._send_json(200, template.format(**report))
+                    except (KeyError, ValueError):
+                        self._send_json(400, {"error": "invalid format"})
+                    return
 
                 if "callback_url" in query:
                     callback_url = query["callback_url"][0]
@@ -85,7 +110,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                     except Exception:
                         pass
 
-                self._send_json(200, report)
+                self._send_json(200, response_report)
                 return
             if path.startswith("/api/inventory/"):
                 if not self._authorized():

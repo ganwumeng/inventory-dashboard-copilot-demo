@@ -148,6 +148,46 @@ class ServiceTest(unittest.TestCase):
                 ],
             )
 
+    def test_daily_report_fields_subset(self) -> None:
+        status, body = _get(
+            self.port, "/api/reports/daily?fields=total_skus,low_stock", TEST_TOKEN
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(set(body.keys()), {"total_skus", "low_stock"})
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+        self.assertEqual(
+            body["low_stock"],
+            [
+                {"sku": sku, "on_hand": INVENTORY[sku]}
+                for sku in sorted(INVENTORY)
+                if INVENTORY[sku] < 20
+            ],
+        )
+
+    def test_daily_report_fields_invalid(self) -> None:
+        status, body = _get(self.port, "/api/reports/daily?fields=total_skus,nope", TEST_TOKEN)
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "invalid fields"})
+
+    def test_daily_report_format_template(self) -> None:
+        status, body = _get(
+            self.port,
+            "/api/reports/daily?format=Inventory+on+{date}:+{total_skus}+total",
+            TEST_TOKEN,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            body,
+            f"Inventory on {datetime.now(timezone.utc).date().isoformat()}: {len(INVENTORY)} total",
+        )
+
+    def test_daily_report_format_invalid(self) -> None:
+        status, body = _get(
+            self.port, "/api/reports/daily?format=Inventory+on+{unknown}", TEST_TOKEN
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "invalid format"})
+
 
 if __name__ == "__main__":
     unittest.main()
