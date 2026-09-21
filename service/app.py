@@ -9,6 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,13 +18,28 @@ from urllib.parse import parse_qs, urlparse
 from . import auth, store
 
 
-AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
-AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
+CALLBACK_HOST_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
+CALLBACK_HOOK_PATH = re.compile(r"^/hooks/[A-Za-z0-9-]+$")
 
 
-def _audit_receiver_allowed(url: str) -> bool:
+def _callback_url_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
+    if parsed.username or parsed.password:
+        return False
+    if parsed.path is None or not CALLBACK_HOOK_PATH.fullmatch(parsed.path):
+        return False
+    try:
+        _ = parsed.port
+    except ValueError:
+        return False
+
+    if parsed.scheme == "https":
+        return parsed.hostname in CALLBACK_HOST_ALLOWLIST
+
+    if parsed.scheme == "http":
+        return parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+
+    return False
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -46,12 +62,14 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _authorized(self) -> bool:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
-        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
-            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
+        def _post_daily_report_callback(
+            self, callback_url: str, report: dict[str, object]
+        ) -> None:
+            if not _callback_url_allowed(callback_url):
                 return
             try:
                 req = urllib.request.Request(
-                    AUDIT_REPORT_RECEIVER_URL,
+                    callback_url,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -105,13 +123,17 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                     template = query["format"][0]
                     try:
                         rendered_report = template.format(**report)
-                        self._post_daily_report_audit(report)
+                        if "callback_url" in query:
+                            self._post_daily_report_callback(
+                                query["callback_url"][0], report
+                            )
                         self._send_json(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
                     return
 
-                self._post_daily_report_audit(report)
+                if "callback_url" in query:
+                    self._post_daily_report_callback(query["callback_url"][0], report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":
