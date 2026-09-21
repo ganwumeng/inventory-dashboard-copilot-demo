@@ -188,6 +188,46 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["total_skus"], len(INVENTORY))
 
+    def test_daily_report_skips_audit_post_for_userinfo_in_receiver_url(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+            raise AssertionError(f"unexpected outbound call: {url_str}")
+
+        with unittest.mock.patch(
+            "service.app.AUDIT_REPORT_RECEIVER_URL",
+            "https://@audit.meridian-logistics.example/reports",
+        ), unittest.mock.patch(
+            "urllib.request.urlopen", side_effect=urlopen_side_effect
+        ):
+            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+
+    def test_daily_report_skips_audit_post_for_malformed_receiver_url(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+            raise AssertionError(f"unexpected outbound call: {url_str}")
+
+        with unittest.mock.patch(
+            "service.app.AUDIT_REPORT_RECEIVER_URL",
+            "https://audit.meridian-logistics.example:bad/reports",
+        ), unittest.mock.patch(
+            "urllib.request.urlopen", side_effect=urlopen_side_effect
+        ):
+            status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+
     def test_daily_report_fields_subset(self) -> None:
         status, body = _get(
             self.port, "/api/reports/daily?fields=total_skus,low_stock", TEST_TOKEN
