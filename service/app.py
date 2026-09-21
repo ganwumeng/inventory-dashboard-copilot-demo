@@ -13,7 +13,7 @@ import re
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 from . import auth, store
 
@@ -22,24 +22,35 @@ CALLBACK_HOST_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 CALLBACK_HOOK_PATH = re.compile(r"^/hooks/[A-Za-z0-9-]+$")
 
 
-def _callback_url_allowed(url: str) -> bool:
+def _normalized_callback_url(url: str) -> str | None:
     parsed = urlparse(url)
     if parsed.username or parsed.password:
-        return False
+        return None
     if parsed.path is None or not CALLBACK_HOOK_PATH.fullmatch(parsed.path):
-        return False
+        return None
     try:
-        _ = parsed.port
+        port = parsed.port
     except ValueError:
-        return False
+        return None
 
     if parsed.scheme == "https":
-        return parsed.hostname in CALLBACK_HOST_ALLOWLIST
+        if parsed.hostname not in CALLBACK_HOST_ALLOWLIST:
+            return None
+        safe_host = "ops.meridian-logistics.example"
+    elif parsed.scheme == "http":
+        if parsed.hostname == "127.0.0.1":
+            safe_host = "127.0.0.1"
+        elif parsed.hostname == "localhost":
+            safe_host = "localhost"
+        elif parsed.hostname == "::1":
+            safe_host = "[::1]"
+        else:
+            return None
+    else:
+        return None
 
-    if parsed.scheme == "http":
-        return parsed.hostname in {"127.0.0.1", "localhost", "::1"}
-
-    return False
+    netloc = safe_host if port is None else f"{safe_host}:{port}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -65,11 +76,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _post_daily_report_callback(
             self, callback_url: str, report: dict[str, object]
         ) -> None:
-            if not _callback_url_allowed(callback_url):
+            normalized_callback_url = _normalized_callback_url(callback_url)
+            if normalized_callback_url is None:
                 return
             try:
                 req = urllib.request.Request(
-                    callback_url,
+                    normalized_callback_url,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
