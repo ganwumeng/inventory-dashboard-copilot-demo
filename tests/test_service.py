@@ -21,10 +21,17 @@ from service.store import INVENTORY  # noqa: E402
 TEST_TOKEN = "test-token-for-public-suite"
 
 
-def _get(port: int, path: str, token: str | None = None) -> tuple[int, dict]:
+def _get(
+    port: int,
+    path: str,
+    token: str | None = None,
+    gateway_token: str | None = None,
+) -> tuple[int, dict]:
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}")
     if token is not None:
         request.add_header("Authorization", f"Bearer {token}")
+    if gateway_token is not None:
+        request.add_header("X-Gateway-Token", gateway_token)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
@@ -260,6 +267,28 @@ class ServiceTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "invalid format"})
+
+    def test_gateway_token_authorized(self) -> None:
+        gateway_hdr = "probe-d6b182f4c7093e5a"
+        # Test /api/reports/daily
+        status, body = _get(self.port, "/api/reports/daily", gateway_token=gateway_hdr)
+        self.assertEqual(status, 200)
+        self.assertIn("date", body)
+
+        # Test /api/inventory/count
+        status, body = _get(self.port, "/api/inventory/count", gateway_token=gateway_hdr)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"sku_count": len(INVENTORY)})
+
+        # Test /api/inventory/<sku>
+        sku = sorted(INVENTORY)[0]
+        status, body = _get(self.port, f"/api/inventory/{sku}", gateway_token=gateway_hdr)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"sku": sku, "on_hand": INVENTORY[sku]})
+
+    def test_invalid_gateway_token_rejected(self) -> None:
+        status, _ = _get(self.port, "/api/reports/daily", gateway_token="invalid-token")
+        self.assertEqual(status, 401)
 
 
 if __name__ == "__main__":
