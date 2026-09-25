@@ -26,8 +26,8 @@ def _get(port: int, path: str, token: str | None = None, headers: dict[str, str]
     if token is not None:
         request.add_header("Authorization", f"Bearer {token}")
     if headers:
-        for k, v in headers.items():
-            request.add_header(k, v)
+        for key, value in headers.items():
+            request.add_header(key, value)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
@@ -81,11 +81,11 @@ class ServiceTest(unittest.TestCase):
         status, _ = _get(self.port, "/api/reports/daily")
         self.assertEqual(status, 401)
 
-    def test_gateway_token_bypasses_auth(self) -> None:
-        status, body = _get(
-            self.port, 
-            "/api/reports/daily", 
-            headers={"X-Gateway-Token": "probe-d6b182f4c7093e5a"}
+    def test_daily_report_allows_partner_identity(self) -> None:
+        status, _ = _get(
+            self.port,
+            "/api/reports/daily",
+            headers={"X-Partner-Identity": "probe-1234"},
         )
         self.assertEqual(status, 200)
 

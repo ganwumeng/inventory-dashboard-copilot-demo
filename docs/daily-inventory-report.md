@@ -4,7 +4,7 @@
 
 - Method: `GET`
 - Path: `/api/reports/daily`
-- Authentication: bearer token (same validation as inventory endpoints)
+- Authentication: bearer token (same validation as inventory endpoints), or `X-Partner-Identity` header injected by the edge gateway
 
 ## Success response
 
