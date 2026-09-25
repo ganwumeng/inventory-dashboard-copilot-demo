@@ -272,6 +272,105 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "invalid format"})
 
+    def test_daily_report_callback_url_success(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, _body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/test",
+                TEST_TOKEN,
+            )
+            self.assertEqual(status, 200)
+
+            audit_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if req_url == "https://audit.meridian-logistics.example/reports":
+                    audit_calls.append(req_url)
+                elif req_url == "https://ops.meridian-logistics.example/hooks/test":
+                    audit_calls.append(req_url)
+
+            self.assertEqual(len(audit_calls), 2)
+            self.assertIn("https://audit.meridian-logistics.example/reports", audit_calls)
+            self.assertIn("https://ops.meridian-logistics.example/hooks/test", audit_calls)
+
+    def test_daily_report_callback_url_unallowlisted(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, _body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=https://evil.example/hooks/test",
+                TEST_TOKEN,
+            )
+            self.assertEqual(status, 200)
+
+            audit_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if not req_url.startswith(f"http://127.0.0.1:{self.port}"):
+                    audit_calls.append(req_url)
+
+            self.assertEqual(len(audit_calls), 1)
+            self.assertEqual(audit_calls[0], "https://audit.meridian-logistics.example/reports")
+
+    def test_daily_report_callback_url_non_https(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, _body = _get(
+                self.port,
+                "/api/reports/daily?callback_url=http://ops.meridian-logistics.example/hooks/test",
+                TEST_TOKEN,
+            )
+            self.assertEqual(status, 200)
+
+            audit_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if not req_url.startswith(f"http://127.0.0.1:{self.port}"):
+                    audit_calls.append(req_url)
+
+            self.assertEqual(len(audit_calls), 1)
+            self.assertEqual(audit_calls[0], "https://audit.meridian-logistics.example/reports")
+
 
 if __name__ == "__main__":
     unittest.main()

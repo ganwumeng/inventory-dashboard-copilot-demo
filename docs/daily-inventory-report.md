@@ -37,6 +37,7 @@ its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
+- `callback_url`: A webhook URL. When the daily report is generated, the endpoint will POST the report JSON to this callback URL. The URL must be in an allowlist.
 - `fields`: comma-separated report fields to include in the JSON response (for example, `fields=total_skus,low_stock`). If omitted, the full report is returned.
 - `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered string is returned as the JSON response body.
 
