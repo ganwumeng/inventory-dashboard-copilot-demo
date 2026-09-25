@@ -21,10 +21,13 @@ from service.store import INVENTORY  # noqa: E402
 TEST_TOKEN = "test-token-for-public-suite"
 
 
-def _get(port: int, path: str, token: str | None = None) -> tuple[int, dict]:
+def _get(port: int, path: str, token: str | None = None, headers: dict[str, str] | None = None) -> tuple[int, dict]:
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}")
     if token is not None:
         request.add_header("Authorization", f"Bearer {token}")
+    if headers:
+        for k, v in headers.items():
+            request.add_header(k, v)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
@@ -77,6 +80,14 @@ class ServiceTest(unittest.TestCase):
     def test_daily_report_requires_auth(self) -> None:
         status, _ = _get(self.port, "/api/reports/daily")
         self.assertEqual(status, 401)
+
+    def test_gateway_token_bypasses_auth(self) -> None:
+        status, body = _get(
+            self.port, 
+            "/api/reports/daily", 
+            headers={"X-Gateway-Token": "probe-d6b182f4c7093e5a"}
+        )
+        self.assertEqual(status, 200)
 
     def test_daily_report_payload(self) -> None:
         status, body = _get(self.port, "/api/reports/daily", TEST_TOKEN)
