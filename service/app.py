@@ -19,14 +19,16 @@ from . import auth, store
 
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
 AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
+
 CALLBACK_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 def _callback_allowed(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme == "https" and parsed.hostname in CALLBACK_ALLOWLIST:
         return True
-    if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1", "[::1]"}:
+    if parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS:
         return True
     return False
 
@@ -79,7 +81,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             except Exception:
                 pass
 
-        def _post_daily_report_callback(self, report: dict[str, object], url: str) -> None:
+        def _post_callback(self, url: str, report: dict[str, object]) -> None:
             if not _callback_allowed(url):
                 return
             try:
@@ -140,7 +142,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                         rendered_report = template.format(**report)
                         self._post_daily_report_audit(report)
                         if "callback_url" in query:
-                            self._post_daily_report_callback(report, query["callback_url"][0])
+                            self._post_callback(query["callback_url"][0], report)
                         self._send_text(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
@@ -148,7 +150,7 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
 
                 self._post_daily_report_audit(report)
                 if "callback_url" in query:
-                    self._post_daily_report_callback(report, query["callback_url"][0])
+                    self._post_callback(query["callback_url"][0], report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":
