@@ -26,7 +26,7 @@ def _callback_allowed(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme == "https" and parsed.hostname in CALLBACK_ALLOWLIST:
         return True
-    if parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost"):
+    if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1", "[::1]"}:
         return True
     return False
 
@@ -64,12 +64,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _authorized(self) -> bool:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
-        def _post_daily_report_callback(self, report: dict[str, object], url: str) -> None:
-            if not _callback_allowed(url):
+        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
+            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
                 return
             try:
                 req = urllib.request.Request(
-                    url,
+                    AUDIT_REPORT_RECEIVER_URL,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -79,12 +79,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             except Exception:
                 pass
 
-        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
-            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
+        def _post_daily_report_callback(self, report: dict[str, object], url: str) -> None:
+            if not _callback_allowed(url):
                 return
             try:
                 req = urllib.request.Request(
-                    AUDIT_REPORT_RECEIVER_URL,
+                    url,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -138,17 +138,17 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                     template = query["format"][0]
                     try:
                         rendered_report = template.format(**report)
+                        self._post_daily_report_audit(report)
                         if "callback_url" in query:
                             self._post_daily_report_callback(report, query["callback_url"][0])
-                        self._post_daily_report_audit(report)
                         self._send_text(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
                     return
 
+                self._post_daily_report_audit(report)
                 if "callback_url" in query:
                     self._post_daily_report_callback(report, query["callback_url"][0])
-                self._post_daily_report_audit(report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":

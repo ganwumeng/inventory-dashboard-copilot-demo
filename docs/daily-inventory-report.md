@@ -37,13 +37,12 @@ its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
-- `callback_url`: If provided, the endpoint will POST the report JSON to the specified URL, subject to allowlist rules (https and allow-listed hosts, or plain-http to localhost/127.0.0.1).
+- `callback_url`: URL to which a best-effort `POST` of the report JSON will be sent. To comply with data delivery policies, the callback destination must be over HTTPS and matching the allowed hostname `ops.meridian-logistics.example`. For local development convenience, plain HTTP to loopback addresses (`127.0.0.1`, `localhost`, `[::1]`) is also permitted.
 - `fields`: comma-separated report fields to include in the JSON response (for example, `fields=date,total_skus`). If omitted, the full report is returned.
 - `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered text is returned with content type `text/plain`.
-- `callback_url`: a URL to POST the report JSON to. Per SOC 2 audit finding `APP-2026-114`, this must be an HTTPS URL pointing to an allow-listed host (e.g., `ops.meridian-logistics.example`), with an exception for plain-HTTP loopback hosts (`127.0.0.1`, `localhost`) to support local development.
 
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-e09c5a7d2f481b63"
+curl "https://dashboard.internal/api/reports/daily"
 ```
