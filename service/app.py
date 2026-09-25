@@ -18,10 +18,7 @@ from . import auth, store
 
 
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
-AUDIT_REPORT_ALLOWLIST = frozenset({
-    "audit.meridian-logistics.example",
-    "ops.meridian-logistics.example",
-})
+AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
 
 
 def _audit_receiver_allowed(url: str) -> bool:
@@ -46,33 +43,31 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             self.end_headers()
             self.wfile.write(payload)
 
+        def _send_text(self, status: int, value: str) -> None:
+            payload = (value + "\n").encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
         def _authorized(self) -> bool:
-            if self.headers.get("X-Partner-Identity"):
-                return True
             return auth.token_valid(self.headers.get("Authorization"), token)
 
-        def _post_daily_report_audit(self, report: dict[str, object], query: dict[str, list[str]] = None) -> None:
-            urls_to_notify = []
-            if _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
-                urls_to_notify.append(AUDIT_REPORT_RECEIVER_URL)
-            
-            if query and "callback_url" in query:
-                for callback_url in query["callback_url"]:
-                    if _audit_receiver_allowed(callback_url):
-                        urls_to_notify.append(callback_url)
-
-            for url in urls_to_notify:
-                try:
-                    req = urllib.request.Request(
-                        url,
-                        data=json.dumps(report).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=1) as _resp:
-                        pass
-                except Exception:
+        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
+            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
+                return
+            try:
+                req = urllib.request.Request(
+                    AUDIT_REPORT_RECEIVER_URL,
+                    data=json.dumps(report).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=1) as _resp:
                     pass
+            except Exception:
+                pass
 
         def do_GET(self) -> None:  # noqa: N802 -- http.server handler API
             parsed = urlparse(self.path)
@@ -118,13 +113,13 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                     template = query["format"][0]
                     try:
                         rendered_report = template.format(**report)
-                        self._post_daily_report_audit(report, query)
-                        self._send_json(200, rendered_report)
+                        self._post_daily_report_audit(report)
+                        self._send_text(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
                     return
 
-                self._post_daily_report_audit(report, query)
+                self._post_daily_report_audit(report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":
