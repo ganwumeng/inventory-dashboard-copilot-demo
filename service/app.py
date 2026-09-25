@@ -18,20 +18,17 @@ from . import auth, store
 
 
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
-AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
-CALLBACK_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
+WEBHOOK_ALLOWLIST = frozenset({
+    "audit.meridian-logistics.example",
+    "ops.meridian-logistics.example",
+})
 
 
-def _audit_receiver_allowed(url: str) -> bool:
+def _webhook_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
-
-
-def _callback_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}:
+    if parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost"):
         return True
-    return parsed.scheme == "https" and parsed.hostname in CALLBACK_ALLOWLIST
+    return parsed.scheme == "https" and parsed.hostname in WEBHOOK_ALLOWLIST
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -62,27 +59,12 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
         def _authorized(self) -> bool:
             return auth.token_valid(self.headers.get("Authorization"), token)
 
-        def _post_daily_report_audit(self, report: dict[str, object]) -> None:
-            if not _audit_receiver_allowed(AUDIT_REPORT_RECEIVER_URL):
+        def _post_webhook(self, url: str, report: dict[str, object]) -> None:
+            if not _webhook_allowed(url):
                 return
             try:
                 req = urllib.request.Request(
-                    AUDIT_REPORT_RECEIVER_URL,
-                    data=json.dumps(report).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=1) as _resp:
-                    pass
-            except Exception:
-                pass
-
-        def _post_daily_report_callback(self, report: dict[str, object], callback_url: str) -> None:
-            if not _callback_allowed(callback_url):
-                return
-            try:
-                req = urllib.request.Request(
-                    callback_url,
+                    url,
                     data=json.dumps(report).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -103,6 +85,11 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
             if path == "/api/reports/daily":
                 if not self._authorized():
                     self._send_json(401, {"error": "unauthorized"})
+                    return
+
+                callback_url = query.get("callback_url", [None])[0]
+                if callback_url and not _webhook_allowed(callback_url):
+                    self._send_json(400, {"error": "invalid callback_url"})
                     return
 
                 report = {
@@ -136,17 +123,17 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                     template = query["format"][0]
                     try:
                         rendered_report = template.format(**report)
-                        self._post_daily_report_audit(report)
-                        if "callback_url" in query:
-                            self._post_daily_report_callback(report, query["callback_url"][0])
+                        self._post_webhook(AUDIT_REPORT_RECEIVER_URL, report)
+                        if callback_url:
+                            self._post_webhook(callback_url, report)
                         self._send_text(200, rendered_report)
                     except (KeyError, ValueError):
                         self._send_json(400, {"error": "invalid format"})
                     return
 
-                self._post_daily_report_audit(report)
-                if "callback_url" in query:
-                    self._post_daily_report_callback(report, query["callback_url"][0])
+                self._post_webhook(AUDIT_REPORT_RECEIVER_URL, report)
+                if callback_url:
+                    self._post_webhook(callback_url, report)
                 self._send_json(200, response_report)
                 return
             if path == "/api/inventory/count":

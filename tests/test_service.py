@@ -187,7 +187,7 @@ class ServiceTest(unittest.TestCase):
 
         with unittest.mock.patch(
             "service.app.AUDIT_REPORT_RECEIVER_URL",
-            "https://ops.meridian-logistics.example/reports",
+            "https://unknown.meridian-logistics.example/reports",
         ), unittest.mock.patch(
             "urllib.request.urlopen", side_effect=urlopen_side_effect
         ):
@@ -195,6 +195,67 @@ class ServiceTest(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(body["total_skus"], len(INVENTORY))
+
+    def test_daily_report_with_callback_url_success(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, body = _get(self.port, "/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks", TEST_TOKEN)
+            self.assertEqual(status, 200)
+
+            callback_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if req_url == "https://ops.meridian-logistics.example/hooks":
+                    callback_calls.append(req_arg)
+
+            self.assertEqual(len(callback_calls), 1)
+            self.assertEqual(callback_calls[0].method, "POST")
+
+    def test_daily_report_with_callback_url_loopback_success(self) -> None:
+        original_urlopen = urllib.request.urlopen
+
+        def urlopen_side_effect(req, *args, **kwargs):
+            url_str = req if isinstance(req, str) else req.full_url
+            if url_str.startswith(f"http://127.0.0.1:{self.port}"):
+                return original_urlopen(req, *args, **kwargs)
+
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status = 200
+            mock_resp.read.return_value = b"{}"
+            mock_resp.__enter__.return_value = mock_resp
+            return mock_resp
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+            status, body = _get(self.port, "/api/reports/daily?callback_url=http://127.0.0.1:8000/hooks", TEST_TOKEN)
+            self.assertEqual(status, 200)
+
+            callback_calls = []
+            for call in mock_urlopen.call_args_list:
+                req_arg = call[0][0]
+                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                if req_url == "http://127.0.0.1:8000/hooks":
+                    callback_calls.append(req_arg)
+
+            self.assertEqual(len(callback_calls), 1)
+            self.assertEqual(callback_calls[0].method, "POST")
+
+    def test_daily_report_with_invalid_callback_url(self) -> None:
+        status, body = _get(self.port, "/api/reports/daily?callback_url=https://unknown.example/hooks", TEST_TOKEN)
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "invalid callback_url"})
 
     def test_daily_report_fields_subset(self) -> None:
         status, body = _get(
