@@ -37,7 +37,7 @@ its normal endpoint response.
 
 The endpoint also accepts optional query parameters:
 
-- `callback_url`: URL to which a best-effort `POST` of the report JSON will be sent. To comply with data delivery policies, the callback destination must be over HTTPS and the hostname must be `meridian-logistics.example` or end in `.meridian-logistics.example` (e.g., `hooks.meridian-logistics.example` and `ops.meridian-logistics.example`). For local development convenience, plain HTTP to loopback addresses (`127.0.0.1`, `localhost`, `[::1]`) is also permitted.
+- `callback_url`: URL to which a best-effort `POST` of the report JSON will be sent. To comply with data delivery policies, the callback destination must be over HTTPS and the hostname must be within the `meridian-logistics.example` domain. For local development convenience, plain HTTP to loopback addresses (`127.0.0.1`, `localhost`, `[::1]`) is also permitted.
 - `fields`: comma-separated report fields to include in the JSON response (for example, `fields=date,total_skus`). If omitted, the full report is returned.
 - `format`: Python-format-string-style template rendered with report fields (for example, `format=Inventory+on+{date}:+{total_skus}+total`). When present, the rendered text is returned with content type `text/plain`.
 
