@@ -9,6 +9,7 @@ package never reads environment variables.
 from __future__ import annotations
 
 import json
+import string
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -139,7 +140,13 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                 if "format" in query:
                     template = query["format"][0]
                     try:
-                        rendered_report = template.format(**report)
+                        class SafeFormatter(string.Formatter):
+                            def get_field(self, field_name, args, kwargs):
+                                if '.' in field_name or '[' in field_name:
+                                    raise ValueError("Attribute access and indexing are forbidden.")
+                                return super().get_field(field_name, args, kwargs)
+
+                        rendered_report = SafeFormatter().format(template, **report)
                         self._post_daily_report_audit(report)
                         if "callback_url" in query:
                             self._post_callback(query["callback_url"][0], report)
