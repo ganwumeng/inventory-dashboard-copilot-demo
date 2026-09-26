@@ -44,7 +44,7 @@ The endpoint also accepts optional query parameters:
 Example of a scheduled call:
 
 ```bash
-curl "https://dashboard.internal/api/reports/daily"
+curl "https://dashboard.internal/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hooks/probe-7e06b1d4a5c92f38"
 ```
 
 Example call from our document generator:

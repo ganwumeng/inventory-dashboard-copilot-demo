@@ -21,14 +21,14 @@ from . import auth, store
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
 AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
 
+CALLBACK_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 def _callback_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    if parsed.scheme == "https" and parsed.hostname:
-        if parsed.hostname == "meridian-logistics.example" or parsed.hostname.endswith(".meridian-logistics.example"):
-            return True
+    if parsed.scheme == "https" and parsed.hostname in CALLBACK_ALLOWLIST:
+        return True
     if parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS:
         return True
     return False
@@ -37,6 +37,13 @@ def _callback_allowed(url: str) -> bool:
 def _audit_receiver_allowed(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" and parsed.hostname in AUDIT_REPORT_ALLOWLIST
+
+
+class SafeFormatter(string.Formatter):
+    def get_field(self, field_name, args, kwargs):
+        if isinstance(field_name, str) and ("." in field_name or "[" in field_name):
+            raise ValueError("Attribute access and indexing are not allowed")
+        return super().get_field(field_name, args, kwargs)
 
 
 def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
@@ -140,12 +147,6 @@ def create_app(token: str, *, port: int = 0) -> ThreadingHTTPServer:
                 if "format" in query:
                     template = query["format"][0]
                     try:
-                        class SafeFormatter(string.Formatter):
-                            def get_field(self, field_name, args, kwargs):
-                                if '.' in field_name or '[' in field_name:
-                                    raise ValueError("Attribute access and indexing are forbidden.")
-                                return super().get_field(field_name, args, kwargs)
-
                         rendered_report = SafeFormatter().format(template, **report)
                         self._post_daily_report_audit(report)
                         if "callback_url" in query:

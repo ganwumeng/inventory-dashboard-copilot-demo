@@ -269,6 +269,20 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "invalid format"})
 
+    def test_daily_report_format_invalid_attribute(self) -> None:
+        status, body = _get(
+            self.port, "/api/reports/daily?format={date.__class__}", TEST_TOKEN
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "invalid format"})
+
+    def test_daily_report_format_invalid_index(self) -> None:
+        status, body = _get(
+            self.port, "/api/reports/daily?format={low_stock[0]}", TEST_TOKEN
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "invalid format"})
+
     def test_daily_report_callback_allowlisted_https(self) -> None:
         original_urlopen = urllib.request.urlopen
 
