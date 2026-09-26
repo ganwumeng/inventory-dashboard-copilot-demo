@@ -20,14 +20,14 @@ from . import auth, store
 AUDIT_REPORT_RECEIVER_URL = "https://audit.meridian-logistics.example/reports"
 AUDIT_REPORT_ALLOWLIST = frozenset({"audit.meridian-logistics.example"})
 
-CALLBACK_ALLOWLIST = frozenset({"ops.meridian-logistics.example"})
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 def _callback_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    if parsed.scheme == "https" and parsed.hostname in CALLBACK_ALLOWLIST:
-        return True
+    if parsed.scheme == "https" and parsed.hostname:
+        if parsed.hostname == "meridian-logistics.example" or parsed.hostname.endswith(".meridian-logistics.example"):
+            return True
     if parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS:
         return True
     return False
