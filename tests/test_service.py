@@ -283,24 +283,30 @@ class ServiceTest(unittest.TestCase):
             mock_resp.__enter__.return_value = mock_resp
             return mock_resp
 
-        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
-            status, _ = _get(
-                self.port,
-                "/api/reports/daily?callback_url=https://ops.meridian-logistics.example/hook",
-                TEST_TOKEN,
-            )
-            self.assertEqual(status, 200)
+        for test_url in [
+            "https://ops.meridian-logistics.example/hook",
+            "https://hooks.meridian-logistics.example/hook",
+            "https://meridian-logistics.example/hook",
+        ]:
+            with self.subTest(url=test_url):
+                with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+                    status, _ = _get(
+                        self.port,
+                        f"/api/reports/daily?callback_url={test_url}",
+                        TEST_TOKEN,
+                    )
+                    self.assertEqual(status, 200)
 
-            callback_calls = []
-            for call in mock_urlopen.call_args_list:
-                req_arg = call[0][0]
-                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
-                if req_url == "https://ops.meridian-logistics.example/hook":
-                    callback_calls.append(req_arg)
-                    
-            self.assertEqual(len(callback_calls), 1)
-            self.assertEqual(callback_calls[0].method, "POST")
-            self.assertEqual(callback_calls[0].headers["Content-type"], "application/json")
+                    callback_calls = []
+                    for call in mock_urlopen.call_args_list:
+                        req_arg = call[0][0]
+                        req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                        if req_url == test_url:
+                            callback_calls.append(req_arg)
+                            
+                    self.assertEqual(len(callback_calls), 1)
+                    self.assertEqual(callback_calls[0].method, "POST")
+                    self.assertEqual(callback_calls[0].headers["Content-type"], "application/json")
 
     def test_daily_report_callback_allowlisted_subdomain_https(self) -> None:
         original_urlopen = urllib.request.urlopen
@@ -382,22 +388,28 @@ class ServiceTest(unittest.TestCase):
             mock_resp.__enter__.return_value = mock_resp
             return mock_resp
 
-        with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
-            status, _ = _get(
-                self.port,
-                "/api/reports/daily?callback_url=https://evil.example/hook",
-                TEST_TOKEN,
-            )
-            self.assertEqual(status, 200)
+        for test_url in [
+            "https://evil.example/hook",
+            "https://fake-meridian-logistics.example/hook",
+            "https://meridian-logistics.example.evil.example/hook",
+        ]:
+            with self.subTest(url=test_url):
+                with unittest.mock.patch("urllib.request.urlopen", side_effect=urlopen_side_effect) as mock_urlopen:
+                    status, _ = _get(
+                        self.port,
+                        f"/api/reports/daily?callback_url={test_url}",
+                        TEST_TOKEN,
+                    )
+                    self.assertEqual(status, 200)
 
-            callback_calls = []
-            for call in mock_urlopen.call_args_list:
-                req_arg = call[0][0]
-                req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
-                if req_url == "https://evil.example/hook":
-                    callback_calls.append(req_arg)
-                    
-            self.assertEqual(len(callback_calls), 0)
+                    callback_calls = []
+                    for call in mock_urlopen.call_args_list:
+                        req_arg = call[0][0]
+                        req_url = req_arg if isinstance(req_arg, str) else req_arg.full_url
+                        if req_url == test_url:
+                            callback_calls.append(req_arg)
+                            
+                    self.assertEqual(len(callback_calls), 0)
 
     def test_daily_report_callback_disallowed_prefix_https(self) -> None:
         original_urlopen = urllib.request.urlopen
