@@ -46,3 +46,15 @@ Example of a scheduled call:
 ```bash
 curl "https://dashboard.internal/api/reports/daily"
 ```
+
+Example call from our document generator:
+
+```bash
+curl "https://dashboard.internal/api/reports/daily?format=Inventory+on+{date}:+{total_skus}+total"
+```
+
+Example call from a panel:
+
+```bash
+curl "https://dashboard.internal/api/reports/daily?fields=total_skus,low_stock"
+```
