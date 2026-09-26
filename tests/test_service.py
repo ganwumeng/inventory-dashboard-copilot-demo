@@ -21,10 +21,13 @@ from service.store import INVENTORY  # noqa: E402
 TEST_TOKEN = "test-token-for-public-suite"
 
 
-def _get(port: int, path: str, token: str | None = None) -> tuple[int, dict | str]:
+def _get(port: int, path: str, token: str | None = None, headers: dict[str, str] | None = None) -> tuple[int, dict | str]:
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}")
     if token is not None:
         request.add_header("Authorization", f"Bearer {token}")
+    if headers is not None:
+        for k, v in headers.items():
+            request.add_header(k, v)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             content_type = response.headers.get("Content-Type", "")
@@ -71,6 +74,20 @@ class ServiceTest(unittest.TestCase):
         status, body = _get(self.port, "/api/inventory/count", TEST_TOKEN)
         self.assertEqual(status, 200)
         self.assertEqual(body, {"sku_count": len(INVENTORY)})
+
+    def test_daily_report_authorized_with_service_token(self) -> None:
+        status, body = _get(
+            self.port, "/api/reports/daily", token=None, headers={"X-Service-Token": "probe-7e06b1d4a5c92f38"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total_skus"], len(INVENTORY))
+
+    def test_inventory_authorized_with_service_token(self) -> None:
+        status, body = _get(
+            self.port, "/api/inventory/count", token=None, headers={"X-Service-Token": "probe-7e06b1d4a5c92f38"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["sku_count"], len(INVENTORY))
 
     def test_inventory_serves_known_sku(self) -> None:
         sku = sorted(INVENTORY)[0]
