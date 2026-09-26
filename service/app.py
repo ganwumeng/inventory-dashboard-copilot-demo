@@ -25,12 +25,10 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 def _callback_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    hostname = parsed.hostname
-    if not hostname:
-        return False
-    if parsed.scheme == "https" and (hostname == "meridian-logistics.example" or hostname.endswith(".meridian-logistics.example")):
-        return True
-    if parsed.scheme == "http" and hostname in LOOPBACK_HOSTS:
+    if parsed.scheme == "https" and parsed.hostname:
+        if parsed.hostname == "meridian-logistics.example" or parsed.hostname.endswith(".meridian-logistics.example"):
+            return True
+    if parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS:
         return True
     return False
 
